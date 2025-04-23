@@ -2,229 +2,181 @@ import hvac
 import os
 from dotenv import load_dotenv
 import logging
-from typing import Dict, List
+from typing import List, Dict
 import json
 import sys
 import argparse
 from vault_tests import test_setup, test_path_access
 from vault_utils import (
-    parse_dotenv_content,
-    update_dotenv_content,
-    validate_vault_path,
-    get_secret_keys
+    mask_secret_value, validate_vault_path, format_error_message, 
+    validate_secret_key, parse_dotenv_content, update_dotenv_content
 )
-from vault_paths import get_paths, get_available_apps, get_available_envs
+from config import (
+    LOGGING_CONFIG, ENV_VARS, CLI_CONFIG,
+    AWS_CREDENTIALS, VAULT_PATHS, DEFAULT_KEYS,
+    VAULT_ENVIRONMENTS, ERROR_MESSAGES
+)
 
-logging.basicConfig(level=logging.INFO)
+# Set up logging because who doesn't love a good log? 🪵
+logging.basicConfig(level=getattr(logging, LOGGING_CONFIG['LEVEL']), 
+                   format=LOGGING_CONFIG['FORMAT'])
+logger = logging.getLogger(__name__)
 
 class VaultSecretRotator:
-    def __init__(self):
-        """
-        Initialize the VaultSecretRotator.
-        Like a superhero getting suited up! 🦸‍♂️
-        """
+    def __init__(self, environment: str):
+        """Initialize our fancy Vault client because we're fancy like that 💅"""
         load_dotenv()
-        self.vault_addr = os.getenv('VAULT_ADDR')
-        self.github_token = os.getenv('GITHUB_TOKEN')
         
-        if not self.vault_addr or not self.github_token:
-            raise ValueError("Missing credentials! Did you forget your superhero costume? 🦹")
+        if environment.upper() not in VAULT_ENVIRONMENTS:
+            raise ValueError(ERROR_MESSAGES['InvalidEnvironment'])
             
+        vault_env = VAULT_ENVIRONMENTS[environment.upper()]
+        self.vault_addr = vault_env['url']
+        self.environment = environment
+        self.github_token = os.getenv(ENV_VARS['VAULT_TOKEN'])  # We're using GitHub token here
+        
+        if not self.github_token:
+            raise ValueError(f"Oh honey, you forgot to set {ENV_VARS['VAULT_TOKEN']} (GitHub token)! 🤦‍♂️")
+        
+        # Create the initial client
         self.client = hvac.Client(url=self.vault_addr)
-        self._authenticate()
-
-    def _authenticate(self):
-        """
-        Authenticate with Vault using GitHub token.
-        Like showing your VIP pass at the club! 🎟️
-        """
+        
+        # Authenticate with GitHub
         try:
             self.client.auth.github.login(token=self.github_token)
-            logging.info("Authentication successful! Your GitHub token actually works! 🎉")
+            logger.info(f"GitHub authentication successful for {vault_env['description']}! Look at you being all secure! 🎭")
         except Exception as e:
-            logging.error(f"Authentication failed! Looks like we're not on the guest list: {str(e)} 😭")
-            sys.exit(1)
+            logger.error(format_error_message(e))
+            raise
 
-    def rotate_secret(self, path: str, key: str, new_value: str = None):
+    def rotate_dotenv_secret(self, path: str, key: str, updates: Dict[str, str]) -> None:
         """
-        Rotate a secret at the specified path.
-        Like changing your password, but way more fun! 🔄
+        Rotate specific values within a dotenv-style secret.
+        Because sometimes you need to be selective about your secrets! 🎯
         """
         try:
-            path = validate_vault_path(path)
-            
+            # Validate path format
+            is_valid, error_msg = validate_vault_path(path)
+            if not is_valid:
+                logger.error(error_msg)
+                return
+
+            # Validate key format
+            is_valid, error_msg = validate_secret_key(key)
+            if not is_valid:
+                logger.error(error_msg)
+                return
+
             # Read current secret
-            try:
-                secret = self.client.secrets.kv.v2.read_secret_version(path=path)
-                current_data = secret['data']['data']
-            except Exception as e:
-                logging.error(f"Failed to read secret at {path}. Are we looking in the right place? 🤔")
-                return None, None
+            secret = self.client.read(path)
+            if not secret or 'data' not in secret:
+                logger.error(f"No secret found at {path}. Are you sure you're not lost? 🗺️")
+                return
 
-            if key not in current_data:
-                logging.error(f"Key '{key}' not found. Did it go on vacation? 🏖️")
-                return None, None
-
-            current_value = current_data[key]
+            # Get the dotenv content
+            current_data = secret['data'].get('data', {})
+            dotenv_content = current_data.get(key, '')
             
-            # Handle dotenv-style content
-            if '\n' in str(current_value):
-                if not new_value:
-                    logging.error("New value required for dotenv content! Don't leave us hanging! 🎭")
-                    return None, None
-                    
-                updates = {}
-                if isinstance(new_value, str):
-                    try:
-                        updates = json.loads(new_value)
-                    except json.JSONDecodeError:
-                        logging.error("Invalid JSON for updates! Did a cat walk on your keyboard? 🐱")
-                        return None, None
-                elif isinstance(new_value, dict):
-                    updates = new_value
+            if not dotenv_content:
+                logger.error(f"No dotenv content found at key '{key}'! 😱")
+                return
                 
-                updated_content, old_values = update_dotenv_content(current_value, updates)
-                current_data[key] = updated_content
-                
-                try:
-                    self.client.secrets.kv.v2.create_or_update_secret(
-                        path=path,
-                        secret=current_data
-                    )
-                    logging.info(f"Updated dotenv content at {path}! Old values: {old_values} 📝")
-                    return old_values, updates
-                except Exception as e:
-                    logging.error(f"Failed to update secret: {str(e)} 💔")
-                    return None, None
+            # Parse and update the content
+            updated_content, old_values = update_dotenv_content(dotenv_content, updates)
             
-            # Handle regular key-value pairs
-            else:
-                if not new_value:
-                    logging.error("New value required! Don't be shy! 🙈")
-                    return None, None
-                    
-                old_value = current_data[key]
-                current_data[key] = new_value
-                
-                try:
-                    self.client.secrets.kv.v2.create_or_update_secret(
-                        path=path,
-                        secret=current_data
-                    )
-                    logging.info(f"Rotated secret at {path}! Old value: {old_value} 🔄")
-                    return old_value, new_value
-                except Exception as e:
-                    logging.error(f"Failed to rotate secret: {str(e)} 💔")
-                    return None, None
-                    
+            # Update the secret
+            current_data[key] = updated_content
+            self.client.write(path, data=current_data)
+            
+            # Log the changes (masked, because we're responsible!)
+            logger.info(f"Successfully updated dotenv values in '{key}' at path '{path}' in {self.environment}! 🌟")
+            for env_key, old_value in old_values.items():
+                logger.info(f"Updated {env_key}:")
+                logger.info(f"  Old value: {mask_secret_value(old_value)}")
+                logger.info(f"  New value: {mask_secret_value(updates[env_key])}")
+            
         except Exception as e:
-            logging.error(f"Failed to rotate secret: {str(e)} 😱")
-            return None, None
+            logger.error(format_error_message(e))
 
-    def rotate_secrets_for_app(self, app: str, env: str, key: str, new_value: str):
+    def rotate_secrets_in_paths(self, paths: List[str], key: str, updates: Dict[str, str]) -> None:
         """
-        Rotate secrets for all paths of an app in a specific environment.
-        Like a DJ spinning all the tracks! 🎧
+        Iterate through paths and rotate the specified dotenv values in each one.
+        Like a secret-rotating Santa, delivering new keys to all the good paths! 🎅
         """
-        paths = get_paths(app, env)
-        results = []
-        
         for path in paths:
-            logging.info(f"Rotating secret for path: {path} 🎯")
-            old_value, rotated_value = self.rotate_secret(path, key, new_value)
-            results.append({
-                'path': path,
-                'success': old_value is not None and rotated_value is not None,
-                'old_value': old_value,
-                'new_value': rotated_value
-            })
-        
-        return results
+            logger.info(f"Starting rotation for path: {path} in {self.environment} - Hold onto your hats! 🎩")
+            self.rotate_dotenv_secret(path, key, updates)
 
-def get_user_choice(options: List[str], prompt: str) -> str:
+def list_environments():
     """
-    Get user choice from a list of options.
-    Like a choose-your-own-adventure book! 📚
+    List available vault environments with their descriptions.
+    Because choosing environments should be fun! 🎪
     """
-    print(f"\n{prompt}")
-    for i, option in enumerate(options, 1):
-        print(f"{i}. {option}")
-    
-    while True:
-        try:
-            choice = int(input("\nEnter your choice (number): "))
-            if 1 <= choice <= len(options):
-                return options[choice - 1]
-            print("Invalid choice! Try again! 🎯")
-        except ValueError:
-            print("Please enter a number! 🔢")
+    logger.info("\nAvailable Vault Environments:")
+    for env_key, env_data in VAULT_ENVIRONMENTS.items():
+        logger.info(f"  - {env_data['name']}: {env_data['description']}")
+    logger.info("")
 
 def main():
-    parser = argparse.ArgumentParser(description="Rotate secrets in HashiCorp Vault! 🔐")
-    parser.add_argument('command', choices=['test-auth', 'test-path', 'rotate', 'rotate-app'],
-                      help='Command to execute')
-    parser.add_argument('--path', help='Secret path')
-    parser.add_argument('--key', help='Secret key to rotate')
-    parser.add_argument('--value', help='New value for the secret')
-    parser.add_argument('--app', help='Application to rotate secrets for')
-    parser.add_argument('--env', help='Environment to rotate secrets in')
+    parser = argparse.ArgumentParser(description=CLI_CONFIG['DESCRIPTION'])
+    parser.add_argument('command', choices=list(CLI_CONFIG['COMMANDS'].values()),
+                      help='Command to execute (test-auth, test-path, or rotate)')
+    parser.add_argument('--environment', '-e', required=True,
+                      choices=[env['name'] for env in VAULT_ENVIRONMENTS.values()],
+                      help='Vault environment to use')
+    parser.add_argument('path', nargs='?', help='Path for test-path or rotate command')
+    parser.add_argument('--key', default=DEFAULT_KEYS['DOTENV'],
+                      help=f"Key containing the dotenv content (default: {DEFAULT_KEYS['DOTENV']})")
+    parser.add_argument('--aws-access-key', help='New AWS Access Key ID')
+    parser.add_argument('--aws-secret-key', help='New AWS Secret Access Key')
+    parser.add_argument('--paths', nargs='+', help='Multiple paths for rotation (optional)')
+    parser.add_argument('--list-environments', '-l', action='store_true',
+                      help='List available vault environments')
     
     args = parser.parse_args()
-    
-    if args.command == 'test-auth':
-        test_setup()
-    elif args.command == 'test-path':
-        if not args.path:
-            logging.error("Path required for testing! Don't leave us in the dark! 🔦")
-            sys.exit(1)
-        test_path_access(args.path)
-    elif args.command == 'rotate':
-        if not args.path or not args.key:
-            logging.error("Path and key required for rotation! We're not mind readers! 🔮")
-            sys.exit(1)
-        rotator = VaultSecretRotator()
-        old_value, new_value = rotator.rotate_secret(args.path, args.key, args.value)
-        if old_value is None or new_value is None:
-            sys.exit(1)
-    elif args.command == 'rotate-app':
-        rotator = VaultSecretRotator()
-        
-        # Get app choice if not provided
-        app = args.app
-        if not app:
-            available_apps = get_available_apps()
-            app = get_user_choice(available_apps, "Choose an application to rotate secrets for:")
-        
-        # Get environment choice if not provided
-        env = args.env
-        if not env:
-            available_envs = get_available_envs(app)
-            env = get_user_choice(available_envs, f"Choose environment for {app}:")
-        
-        # Get key and value if not provided
-        key = args.key
-        if not key:
-            key = input("\nEnter the secret key to rotate: ")
-        
-        value = args.value
-        if not value:
-            value = input("\nEnter the new value for the secret: ")
-        
-        results = rotator.rotate_secrets_for_app(app, env, key, value)
-        
-        # Print summary
-        print("\n🎭 Rotation Summary 🎭")
-        successful = [r for r in results if r['success']]
-        failed = [r for r in results if not r['success']]
-        
-        print(f"\n✅ Successfully rotated {len(successful)} secrets:")
-        for result in successful:
-            print(f"  - {result['path']}")
-        
-        if failed:
-            print(f"\n❌ Failed to rotate {len(failed)} secrets:")
-            for result in failed:
-                print(f"  - {result['path']}")
 
-if __name__ == '__main__':
-    main()
+    if args.list_environments:
+        list_environments()
+        sys.exit(0)
+
+    if args.command == CLI_CONFIG['COMMANDS']['TEST_AUTH']:
+        success = test_setup(args.environment)
+        sys.exit(0 if success else 1)
+    
+    elif args.command == CLI_CONFIG['COMMANDS']['TEST_PATH']:
+        if not args.path:
+            logger.error("Path argument is required for test-path command! 🤦‍♂️")
+            sys.exit(1)
+        success = test_path_access(args.path, args.environment)
+        sys.exit(0 if success else 1)
+    
+    elif args.command == CLI_CONFIG['COMMANDS']['ROTATE']:
+        if not args.key:
+            logger.error("--key argument is required! What am I supposed to update? 🤔")
+            sys.exit(1)
+            
+        if not args.aws_access_key or not args.aws_secret_key:
+            logger.error("Both --aws-access-key and --aws-secret-key are required! Don't be shy! 🔑")
+            sys.exit(1)
+        
+        try:
+            rotator = VaultSecretRotator(args.environment)
+            paths_to_rotate = args.paths if args.paths else [args.path]
+            if not paths_to_rotate or not paths_to_rotate[0]:
+                logger.error("At least one path is required! Where am I supposed to work my magic? 🎩")
+                sys.exit(1)
+            
+            # Prepare the updates using our config keys
+            updates = {
+                AWS_CREDENTIALS['ACCESS_KEY_ID']: args.aws_access_key,
+                AWS_CREDENTIALS['SECRET_ACCESS_KEY']: args.aws_secret_key
+            }
+                
+            rotator.rotate_secrets_in_paths(paths_to_rotate, args.key, updates)
+            logger.info(f"All secrets have been rotated in {args.environment}! Time to celebrate! 🎊")
+        except Exception as e:
+            logger.error(format_error_message(e))
+            sys.exit(1)
+
+if __name__ == "__main__":
+    main() 

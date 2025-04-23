@@ -1,85 +1,108 @@
+import logging
+from typing import List, Optional
 import hvac
 import os
 from dotenv import load_dotenv
-import logging
+from vault_utils import validate_vault_path, format_error_message
+
+# Set up logging because testing without logs is like dancing without music! 🎵
+logger = logging.getLogger(__name__)
 
 class VaultTester:
     def __init__(self):
+        """Initialize our test suite because we're professional like that! 🧪"""
         load_dotenv()
+        
         self.vault_addr = os.getenv('VAULT_ADDR')
-        self.github_token = os.getenv('GITHUB_TOKEN')
+        self.github_token = os.getenv('VAULT_TOKEN')
         
-        if not self.vault_addr or not self.github_token:
-            raise ValueError("Missing environment variables! Did you forget to fill out your .env file? 🤦‍♂️")
-        
+        if not all([self.vault_addr, self.github_token]):
+            raise ValueError("Missing credentials! Check your .env file! 🔍")
+            
         self.client = hvac.Client(url=self.vault_addr)
-        self.logger = logging.getLogger(__name__)
-
+        
     def test_auth(self) -> bool:
-        """
-        Test authentication with Vault using GitHub token.
-        Returns True if successful, False otherwise.
-        """
+        """Test if we can authenticate to Vault using GitHub 🔐"""
         try:
             self.client.auth.github.login(token=self.github_token)
-            self.logger.info("Authentication successful! Your GitHub token actually works! 🎉")
-            return True
-        except Exception as e:
-            self.logger.error(f"Authentication failed! Did you anger the GitHub gods? 😅 Error: {str(e)}")
-            return False
-
-    def test_path_access(self, path: str) -> bool:
-        """
-        Test read/write access to a specific path in Vault.
-        Returns True if both read and write are successful, False otherwise.
-        """
-        if not path:
-            raise ValueError("Path cannot be empty! What am I supposed to test, the void? 🌌")
-
-        # Normalize path
-        if path.startswith('secret/'):
-            path = path.replace('secret/', '', 1)
-        elif path.startswith('kv/'):
-            path = path.replace('kv/', '', 1)
-
-        if not path.startswith('data/'):
-            path = f"data/{path}"
-
-        test_key = "test_access_key"
-        test_value = "If you can read this, you have access! 🎯"
-
-        try:
-            # Try to read existing secret
-            try:
-                self.client.secrets.kv.v2.read_secret_version(path=path)
-                self.logger.info(f"Successfully read from {path}! 📖")
-            except Exception as e:
-                self.logger.warning(f"Couldn't read from {path}. Either it doesn't exist or you don't have access! 🤔 Error: {str(e)}")
-
-            # Try to write a test secret
-            try:
-                self.client.secrets.kv.v2.create_or_update_secret(
-                    path=path,
-                    secret={test_key: test_value},
-                )
-                self.logger.info(f"Successfully wrote to {path}! ✍️")
+            if self.client.is_authenticated():
+                logger.info("Authentication successful! Your GitHub token actually works! 🎉")
                 return True
-            except Exception as e:
-                self.logger.error(f"Failed to write to {path}! No party for you! 🚫 Error: {str(e)}")
+            else:
+                logger.error("Authentication failed! Is your GitHub token still valid? 🔌")
                 return False
-
         except Exception as e:
-            self.logger.error(f"Path access test failed! Time to check those permissions! 🔑 Error: {str(e)}")
+            logger.error(format_error_message(e))
+            return False
+            
+    def test_path_access(self, path: str) -> bool:
+        """Test read and write access to a path 🔍"""
+        try:
+            # First authenticate
+            if not self.test_auth():
+                return False
+                
+            # Validate path format
+            is_valid, error_msg = validate_vault_path(path)
+            if not is_valid:
+                logger.error(error_msg)
+                return False
+            
+            # Test read
+            logger.info(f"Testing read access to path: {path} 👀")
+            secret = self.client.read(path)
+            if not secret or 'data' not in secret:
+                logger.error(f"Cannot read secret at {path}! Do you even have access? 🤔")
+                return False
+                
+            # Test write by writing the same data back
+            logger.info(f"Testing write access to path: {path} ✍️")
+            current_data = secret['data'].get('data', {})
+            self.client.write(path, data=current_data)
+            
+            logger.info(f"Successfully tested read/write access to {path}! You're a star! ⭐")
+            return True
+            
+        except Exception as e:
+            logger.error(format_error_message(e))
             return False
 
 def test_setup() -> bool:
-    """Test Vault authentication setup"""
-    tester = VaultTester()
-    return tester.test_auth()
+    """Run the authentication test 🎭"""
+    try:
+        tester = VaultTester()
+        return tester.test_auth()
+    except Exception as e:
+        logger.error(format_error_message(e))
+        return False
 
 def test_path_access(path: str) -> bool:
-    """Test access to a specific path"""
-    tester = VaultTester()
-    if not tester.test_auth():
+    """Run the path access test 🎯"""
+    try:
+        tester = VaultTester()
+        return tester.test_path_access(path)
+    except Exception as e:
+        logger.error(format_error_message(e))
         return False
-    return tester.test_path_access(path)
+
+# Add some fancy test runners because we're extra like that ✨
+def run_all_tests(paths: List[str] = None) -> bool:
+    """Run all tests because we're thorough like that! 🎭"""
+    logger.info("Starting test suite - hold onto your bits! 🎪")
+    
+    # Test authentication
+    auth_success = test_setup()
+    if not auth_success:
+        logger.error("Authentication test failed! Everything else is pointless! 😭")
+        return False
+        
+    # Test paths if provided
+    if paths:
+        for path in paths:
+            logger.info(f"Testing path: {path} 🎯")
+            if not test_path_access(path):
+                logger.error(f"Path test failed for {path}! 💔")
+                return False
+                
+    logger.info("All tests passed! You're a testing genius! 🎉")
+    return True 

@@ -1,79 +1,131 @@
-# 🔐 Vault Secrets Rotator
+# Secrets Rotate 🔄
 
-Because your secrets deserve a makeover every now and then! 💅
+A production-grade tool for rotating AWS credentials in HashiCorp Vault across different environments.
 
-## 🌟 Features
+## Features ✨
 
-- Authenticate with HashiCorp Vault using GitHub tokens (because who doesn't love OAuth?)
-- Rotate secrets like a pro DJ 🎧
-- Handle dotenv-style secrets with more grace than a ballet dancer
-- Test your Vault access without breaking a sweat 💪
-- Logging that's more informative than your chatty neighbor
+- Environment-aware secret rotation (Testing, Non-Prod, Production)
+- Secure handling of AWS credentials
+- Dotenv-style secret management
+- Comprehensive logging and error handling
+- Path validation and security checks
+- GitHub token authentication
 
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Python 3.x (because we're not savages)
-- HashiCorp Vault instance (duh!)
-- GitHub token with the right permissions (don't be stingy with those scopes!)
-- A sense of humor (required)
-
-### Installation
-
-1. Clone this repository (it won't bite):
-```bash
-git clone https://github.com/cph0r/vault-secrets-rotator.git
-cd vault-secrets-rotator
-```
-
-2. Set up your environment variables (because hardcoding is so 2010):
-```bash
-export VAULT_ADDR="your-vault-address"
-export GITHUB_TOKEN="your-github-token"
-```
-
-## 🎯 Usage
-
-### Testing Authentication
+## Installation 🚀
 
 ```bash
-python3 rotate_secrets.py test-auth
+# Clone the repository
+git clone https://github.com/your-org/secrets-rotate.git
+cd secrets-rotate
+
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: .\venv\Scripts\activate
+
+# Install the package
+pip install -e .
 ```
 
-### Testing Path Access
+## Usage 🎯
+
+### List Available Environments
 
 ```bash
-python3 rotate_secrets.py test-path "your/vault/path"
+secrets-rotate --list-environments
 ```
 
-### Rotating Secrets
+### Test Authentication
 
 ```bash
-python3 rotate_secrets.py rotate "your/vault/path" "your-secret-key" "new-value"
+secrets-rotate test-auth --environment testing
 ```
 
-## 🧪 Testing
+### Test Path Access
 
-Run the test suite (it's more reliable than your ex):
 ```bash
-python3 test_runner.py
+secrets-rotate test-path \
+  --environment non-prod \
+  --path "secret/data/your/path"
 ```
 
-## 📚 File Structure
+### Rotate AWS Credentials
 
-- `rotate_secrets.py`: The star of the show 🌟
-- `vault_tests.py`: Testing suite (because we're professionals)
-- `vault_utils.py`: Utility functions (the unsung heroes)
+```bash
+secrets-rotate rotate \
+  --environment prod \
+  --path "secret/data/your/path" \
+  --key "dotenv" \
+  --aws-access-key "your-new-access-key" \
+  --aws-secret-key "your-new-secret-key"
+```
 
-## 🤝 Contributing
+### Multiple Paths
 
-PRs are welcome! Just make sure your code is as fabulous as ours! ✨
+```bash
+secrets-rotate rotate \
+  --environment non-prod \
+  --paths "secret/data/path1" "secret/data/path2" \
+  --aws-access-key "your-new-access-key" \
+  --aws-secret-key "your-new-secret-key"
+```
 
-## 📝 License
+## Environment Setup 🌍
 
-MIT - Because sharing is caring! 🤗
+1. Create a `.env` file in your project root:
+```env
+VAULT_TOKEN=your-github-token
+```
 
-## ⚠️ Disclaimer
+2. Ensure you have appropriate access to the Vault environments:
+- Testing: https://vault-us-west-2-testing.c2fo.com/
+- Non-Prod: https://vault-us-west-2-non-prod.c2fo.com/
+- Production: https://vault-us-west-2.c2fo.com/
 
-No secrets were harmed in the making of this tool. However, we can't promise the same for your sanity while debugging Vault permissions! 😅
+## Development 🛠️
+
+### Project Structure
+
+```
+secrets_rotate/
+├── core/           # Core functionality
+│   ├── __init__.py
+│   └── rotator.py  # VaultSecretRotator class
+├── cli/            # CLI interface
+│   ├── __init__.py
+│   └── main.py     # Command-line handling
+├── utils/          # Utility functions
+│   ├── __init__.py
+│   └── helpers.py  # Helper functions
+├── config/         # Configuration
+│   ├── __init__.py
+│   └── settings.py # Configuration settings
+└── tests/          # Test suite
+    ├── __init__.py
+    └── test_*.py   # Test files
+```
+
+### Running Tests
+
+```bash
+python -m pytest
+```
+
+## Security Considerations 🔒
+
+- Never commit `.env` files
+- Use environment-specific paths
+- Always validate paths and keys
+- Rotate production credentials with caution
+- Use appropriate access controls in Vault
+
+## Contributing 🤝
+
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## License 📄
+
+[Your License Here] 
