@@ -13,6 +13,7 @@ from vault_utils import (
     validate_vault_path,
     get_secret_keys
 )
+from vault_paths import get_paths, get_available_apps, get_available_envs
 
 logging.basicConfig(level=logging.INFO)
 
@@ -120,13 +121,53 @@ class VaultSecretRotator:
             logging.error(f"Failed to rotate secret: {str(e)} 😱")
             return None, None
 
+    def rotate_secrets_for_app(self, app: str, env: str, key: str, new_value: str):
+        """
+        Rotate secrets for all paths of an app in a specific environment.
+        Like a DJ spinning all the tracks! 🎧
+        """
+        paths = get_paths(app, env)
+        results = []
+        
+        for path in paths:
+            logging.info(f"Rotating secret for path: {path} 🎯")
+            old_value, rotated_value = self.rotate_secret(path, key, new_value)
+            results.append({
+                'path': path,
+                'success': old_value is not None and rotated_value is not None,
+                'old_value': old_value,
+                'new_value': rotated_value
+            })
+        
+        return results
+
+def get_user_choice(options: List[str], prompt: str) -> str:
+    """
+    Get user choice from a list of options.
+    Like a choose-your-own-adventure book! 📚
+    """
+    print(f"\n{prompt}")
+    for i, option in enumerate(options, 1):
+        print(f"{i}. {option}")
+    
+    while True:
+        try:
+            choice = int(input("\nEnter your choice (number): "))
+            if 1 <= choice <= len(options):
+                return options[choice - 1]
+            print("Invalid choice! Try again! 🎯")
+        except ValueError:
+            print("Please enter a number! 🔢")
+
 def main():
     parser = argparse.ArgumentParser(description="Rotate secrets in HashiCorp Vault! 🔐")
-    parser.add_argument('command', choices=['test-auth', 'test-path', 'rotate'],
+    parser.add_argument('command', choices=['test-auth', 'test-path', 'rotate', 'rotate-app'],
                       help='Command to execute')
     parser.add_argument('--path', help='Secret path')
     parser.add_argument('--key', help='Secret key to rotate')
     parser.add_argument('--value', help='New value for the secret')
+    parser.add_argument('--app', help='Application to rotate secrets for')
+    parser.add_argument('--env', help='Environment to rotate secrets in')
     
     args = parser.parse_args()
     
@@ -145,6 +186,45 @@ def main():
         old_value, new_value = rotator.rotate_secret(args.path, args.key, args.value)
         if old_value is None or new_value is None:
             sys.exit(1)
+    elif args.command == 'rotate-app':
+        rotator = VaultSecretRotator()
+        
+        # Get app choice if not provided
+        app = args.app
+        if not app:
+            available_apps = get_available_apps()
+            app = get_user_choice(available_apps, "Choose an application to rotate secrets for:")
+        
+        # Get environment choice if not provided
+        env = args.env
+        if not env:
+            available_envs = get_available_envs(app)
+            env = get_user_choice(available_envs, f"Choose environment for {app}:")
+        
+        # Get key and value if not provided
+        key = args.key
+        if not key:
+            key = input("\nEnter the secret key to rotate: ")
+        
+        value = args.value
+        if not value:
+            value = input("\nEnter the new value for the secret: ")
+        
+        results = rotator.rotate_secrets_for_app(app, env, key, value)
+        
+        # Print summary
+        print("\n🎭 Rotation Summary 🎭")
+        successful = [r for r in results if r['success']]
+        failed = [r for r in results if not r['success']]
+        
+        print(f"\n✅ Successfully rotated {len(successful)} secrets:")
+        for result in successful:
+            print(f"  - {result['path']}")
+        
+        if failed:
+            print(f"\n❌ Failed to rotate {len(failed)} secrets:")
+            for result in failed:
+                print(f"  - {result['path']}")
 
 if __name__ == '__main__':
     main()
