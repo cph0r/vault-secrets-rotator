@@ -1,182 +1,138 @@
-import hvac
-import os
-from dotenv import load_dotenv
+#!/usr/bin/env python3
+"""
+Secret Rotator CLI
+
+This script allows users to rotate secrets stored in HashiCorp Vault across multiple environments and applications.
+"""
+
 import logging
-from typing import List, Dict
-import json
 import sys
-import argparse
-from vault_tests import test_setup, test_path_access
-from vault_utils import (
-    mask_secret_value, validate_vault_path, format_error_message, 
-    validate_secret_key, parse_dotenv_content, update_dotenv_content
+from utils import (
+    load_config,
+    init_vault_client,
+    check_login,
+    check_paths,
+    prompt_user,
+    rotate_secret_kv,
+    confirm_changes,
 )
-from config import (
-    LOGGING_CONFIG, ENV_VARS, CLI_CONFIG,
-    AWS_CREDENTIALS, VAULT_PATHS, DEFAULT_KEYS,
-    VAULT_ENVIRONMENTS, ERROR_MESSAGES
-)
+import hvac
 
-# Set up logging because who doesn't love a good log? 🪵
-logging.basicConfig(level=getattr(logging, LOGGING_CONFIG['LEVEL']), 
-                   format=LOGGING_CONFIG['FORMAT'])
-logger = logging.getLogger(__name__)
-
-class VaultSecretRotator:
-    def __init__(self, environment: str):
-        """Initialize our fancy Vault client because we're fancy like that 💅"""
-        load_dotenv()
-        
-        if environment.upper() not in VAULT_ENVIRONMENTS:
-            raise ValueError(ERROR_MESSAGES['InvalidEnvironment'])
-            
-        vault_env = VAULT_ENVIRONMENTS[environment.upper()]
-        self.vault_addr = vault_env['url']
-        self.environment = environment
-        self.github_token = os.getenv(ENV_VARS['VAULT_TOKEN'])  # We're using GitHub token here
-        
-        if not self.github_token:
-            raise ValueError(f"Oh honey, you forgot to set {ENV_VARS['VAULT_TOKEN']} (GitHub token)! 🤦‍♂️")
-        
-        # Create the initial client
-        self.client = hvac.Client(url=self.vault_addr)
-        
-        # Authenticate with GitHub
-        try:
-            self.client.auth.github.login(token=self.github_token)
-            logger.info(f"GitHub authentication successful for {vault_env['description']}! Look at you being all secure! 🎭")
-        except Exception as e:
-            logger.error(format_error_message(e))
-            raise
-
-    def rotate_dotenv_secret(self, path: str, key: str, updates: Dict[str, str]) -> None:
-        """
-        Rotate specific values within a dotenv-style secret.
-        Because sometimes you need to be selective about your secrets! 🎯
-        """
-        try:
-            # Validate path format
-            is_valid, error_msg = validate_vault_path(path)
-            if not is_valid:
-                logger.error(error_msg)
-                return
-
-            # Validate key format
-            is_valid, error_msg = validate_secret_key(key)
-            if not is_valid:
-                logger.error(error_msg)
-                return
-
-            # Read current secret
-            secret = self.client.read(path)
-            if not secret or 'data' not in secret:
-                logger.error(f"No secret found at {path}. Are you sure you're not lost? 🗺️")
-                return
-
-            # Get the dotenv content
-            current_data = secret['data'].get('data', {})
-            dotenv_content = current_data.get(key, '')
-            
-            if not dotenv_content:
-                logger.error(f"No dotenv content found at key '{key}'! 😱")
-                return
-                
-            # Parse and update the content
-            updated_content, old_values = update_dotenv_content(dotenv_content, updates)
-            
-            # Update the secret
-            current_data[key] = updated_content
-            self.client.write(path, data=current_data)
-            
-            # Log the changes (masked, because we're responsible!)
-            logger.info(f"Successfully updated dotenv values in '{key}' at path '{path}' in {self.environment}! 🌟")
-            for env_key, old_value in old_values.items():
-                logger.info(f"Updated {env_key}:")
-                logger.info(f"  Old value: {mask_secret_value(old_value)}")
-                logger.info(f"  New value: {mask_secret_value(updates[env_key])}")
-            
-        except Exception as e:
-            logger.error(format_error_message(e))
-
-    def rotate_secrets_in_paths(self, paths: List[str], key: str, updates: Dict[str, str]) -> None:
-        """
-        Iterate through paths and rotate the specified dotenv values in each one.
-        Like a secret-rotating Santa, delivering new keys to all the good paths! 🎅
-        """
-        for path in paths:
-            logger.info(f"Starting rotation for path: {path} in {self.environment} - Hold onto your hats! 🎩")
-            self.rotate_dotenv_secret(path, key, updates)
-
-def list_environments():
-    """
-    List available vault environments with their descriptions.
-    Because choosing environments should be fun! 🎪
-    """
-    logger.info("\nAvailable Vault Environments:")
-    for env_key, env_data in VAULT_ENVIRONMENTS.items():
-        logger.info(f"  - {env_data['name']}: {env_data['description']}")
-    logger.info("")
 
 def main():
-    parser = argparse.ArgumentParser(description=CLI_CONFIG['DESCRIPTION'])
-    parser.add_argument('command', choices=list(CLI_CONFIG['COMMANDS'].values()),
-                      help='Command to execute (test-auth, test-path, or rotate)')
-    parser.add_argument('--environment', '-e', required=True,
-                      choices=[env['name'] for env in VAULT_ENVIRONMENTS.values()],
-                      help='Vault environment to use')
-    parser.add_argument('path', nargs='?', help='Path for test-path or rotate command')
-    parser.add_argument('--key', default=DEFAULT_KEYS['DOTENV'],
-                      help=f"Key containing the dotenv content (default: {DEFAULT_KEYS['DOTENV']})")
-    parser.add_argument('--aws-access-key', help='New AWS Access Key ID')
-    parser.add_argument('--aws-secret-key', help='New AWS Secret Access Key')
-    parser.add_argument('--paths', nargs='+', help='Multiple paths for rotation (optional)')
-    parser.add_argument('--list-environments', '-l', action='store_true',
-                      help='List available vault environments')
-    
-    args = parser.parse_args()
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
+    logger = logging.getLogger(__name__)
 
-    if args.list_environments:
-        list_environments()
+    logger.info("🔐 Welcome to the Secret Rotator!")
+
+    # Load configuration
+    try:
+        config = load_config("config.yaml")
+    except Exception as e:
+        logger.error(f"❌ Failed to load config: {e}")
+        sys.exit(1)
+
+    # Environment selection
+    env_choice = prompt_user("Select environment", list(config["environments"].keys()))
+
+    # GitHub authentication
+    logger.info("\n🔑 GitHub Authentication Required")
+    logger.info("Required scopes: read:org, repo (for private repos)")
+    token = prompt_user("Enter your GitHub Personal Access Token", sensitive=True)
+    
+    try:
+        client = init_vault_client(token, config, env_choice)
+    except ValueError as e:
+        logger.error(f"❌ {str(e)}")
+        sys.exit(1)
+
+    # Verify login
+    if not check_login(client):
+        logger.error("❌ Login failed. Check your token and try again.")
+        sys.exit(1)
+
+    # Get available applications
+    available_apps = [app for app in config["environments"][env_choice].keys() if app != "vault_url"]
+    if not available_apps:
+        logger.error("❌ No applications configured for this environment.")
+        sys.exit(1)
+
+    # Test paths
+    mount_point = config["vault"]["mount_point"]
+    first_app = available_apps[0]
+    paths = config["environments"][env_choice][first_app]["paths"]
+
+    logger.info("🔍 Verifying access to paths...")
+    path_results = check_paths(client, mount_point, paths)
+    
+    # Show results
+    all_accessible = True
+    for path, accessible in path_results.items():
+        if not accessible:
+            all_accessible = False
+            logger.error(f"❌ Failed to access: {path}")
+    
+    if not all_accessible:
+        logger.error("❌ Some paths are not accessible. Please verify permissions and paths.")
+        sys.exit(1)
+
+    # Application selection
+    app_choice = prompt_user("Select application", available_apps)
+    paths = config["environments"][env_choice][app_choice]["paths"]
+
+    # Choose secret type
+    secret_type = prompt_user(
+        "What would you like to rotate?",
+        ["AWS secret keys", "Some other secret"]
+    )
+    changes = {"environment": env_choice, "application": app_choice}
+
+    if secret_type == "AWS secret keys":
+        access_key_id = prompt_user("Enter new AWS access key ID", sensitive=True)
+        secret_access_key = prompt_user("Enter new AWS secret access key", sensitive=True)
+        changes["AWS_ACCESS_KEY_ID"] = access_key_id
+        changes["AWS_SECRET_ACCESS_KEY"] = secret_access_key
+    else:
+        logger.info("Enter the environment variable name (without 'export' prefix)")
+        logger.info("Example: for 'export LANGFUSE_HOST=...' enter 'LANGFUSE_HOST'")
+        key_name = prompt_user("Environment variable name")
+        new_value = prompt_user(f"New value for {key_name}", sensitive=True)
+        changes[f"Environment variable"] = f"export {key_name}={new_value}"
+
+    # Confirmation
+    if not confirm_changes(changes):
+        logger.info("🚫 Operation cancelled.")
         sys.exit(0)
 
-    if args.command == CLI_CONFIG['COMMANDS']['TEST_AUTH']:
-        success = test_setup(args.environment)
-        sys.exit(0 if success else 1)
-    
-    elif args.command == CLI_CONFIG['COMMANDS']['TEST_PATH']:
-        if not args.path:
-            logger.error("Path argument is required for test-path command! 🤦‍♂️")
-            sys.exit(1)
-        success = test_path_access(args.path, args.environment)
-        sys.exit(0 if success else 1)
-    
-    elif args.command == CLI_CONFIG['COMMANDS']['ROTATE']:
-        if not args.key:
-            logger.error("--key argument is required! What am I supposed to update? 🤔")
-            sys.exit(1)
-            
-        if not args.aws_access_key or not args.aws_secret_key:
-            logger.error("Both --aws-access-key and --aws-secret-key are required! Don't be shy! 🔑")
-            sys.exit(1)
-        
-        try:
-            rotator = VaultSecretRotator(args.environment)
-            paths_to_rotate = args.paths if args.paths else [args.path]
-            if not paths_to_rotate or not paths_to_rotate[0]:
-                logger.error("At least one path is required! Where am I supposed to work my magic? 🎩")
-                sys.exit(1)
-            
-            # Prepare the updates using our config keys
-            updates = {
-                AWS_CREDENTIALS['ACCESS_KEY_ID']: args.aws_access_key,
-                AWS_CREDENTIALS['SECRET_ACCESS_KEY']: args.aws_secret_key
-            }
-                
-            rotator.rotate_secrets_in_paths(paths_to_rotate, args.key, updates)
-            logger.info(f"All secrets have been rotated in {args.environment}! Time to celebrate! 🎊")
-        except Exception as e:
-            logger.error(format_error_message(e))
-            sys.exit(1)
+    # Perform rotations
+    logger.info("⚙️  Rotating secrets...")
+    try:
+        for path in paths:
+            if secret_type == "AWS secret keys":
+                rotate_secret_kv(
+                    client, mount_point, path,
+                    {
+                        "AWS_ACCESS_KEY_ID": access_key_id,
+                        "AWS_SECRET_ACCESS_KEY": secret_access_key
+                    }
+                )
+            else:
+                rotate_secret_kv(
+                    client, mount_point, path,
+                    key_name, new_value
+                )
+            logger.info(f"🔄 Updated {path}")
+    except ValueError as e:
+        logger.error(f"❌ Failed to rotate secrets: {str(e)}")
+        sys.exit(1)
+
+    logger.info("🎉 Secrets rotated successfully!")
+
 
 if __name__ == "__main__":
     main() 

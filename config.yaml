@@ -1,0 +1,40 @@
+vault:
+  mount_point: "kv"
+
+environments:
+  prod:
+    vault_url: "https://vault-us-west-2.c2fo.com"
+    Helios:
+      paths:
+        - "kv/data/engineering/v1/airflow/data-engineering/cie-inference"
+        - "kv/data/engineering/v1/airflow/data-engineering/helios"
+        - "kv/data/engineering/v1/airflow/data-engineering/model-service"
+        - "kv/data/engineering/v1/c2fo-chat/data-engineering/chat-env"
+        - "kv/data/engineering/ec2/data-engineering/atlas-spark-apps/helios"
+        - "kv/data/engineering/ec2/data-engineering/helios/secrets"
+    Pricing:
+      paths:
+        - "kv/data/engineering/v1/dummy-shadow-pricing-service/data-engineering/pricing-env"
+        - "kv/data/engineering/v1/nmr-shadow-pricing-service/data-engineering/pricing-env"
+        - "kv/data/engineering/v1/pricing-service/data-engineering/pricing-env"
+        - "kv/data/engineering/v1/prod-pricing-service/data-engineering/pricing-env"
+        - "kv/data/engineering/v1/ps-shadow-pricing-service/data-engineering/pricing-env"
+        - "kv/data/engineering/v1/shadow-pricing-service/data-engineering/pricing-env"
+
+  testing:
+    vault_url: "https://vault-us-west-2-testing.c2fo.com"
+    Helios:
+      paths:
+        - "kv/data/engineering/v1/airflow/data-engineering/cie-inference"
+        - "kv/data/engineering/v1/airflow/data-engineering/helios"
+    Pricing:
+      paths:
+        - "kv/data/engineering/v1/pricing-service/data-engineering/pricing-env"
+  non_prod:
+    vault_url: "https://vault-us-west-2-non-prod.c2fo.com"
+    Helios:
+      paths:
+        - "kv/data/engineering/v1/fss-c2fo-chat/data-engineering/chat-env"
+    Pricing:
+      paths:
+        - "kv/data/engineering/v1/fss-pricing-service/data-engineering/pricing-env"
