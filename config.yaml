@@ -1,40 +1,139 @@
 vault:
   mount_point: "kv"
+  # Define supported secret formats and their descriptions
+  formats:
+    dotenv_export: "Secrets stored as 'export KEY=\"value\"' statements"
+    json: "Secrets stored as JSON key-value pairs"
+    dotenv_plain: "Secrets stored as plain 'KEY=value' pairs"
 
 environments:
   prod:
     vault_url: "https://vault-us-west-2.c2fo.com"
     Helios:
       paths:
-        - "kv/data/engineering/v1/airflow/data-engineering/cie-inference"
-        - "kv/data/engineering/v1/airflow/data-engineering/helios"
-        - "kv/data/engineering/v1/airflow/data-engineering/model-service"
-        - "kv/data/engineering/v1/c2fo-chat/data-engineering/chat-env"
-        - "kv/data/engineering/ec2/data-engineering/atlas-spark-apps/helios"
-        - "kv/data/engineering/ec2/data-engineering/helios/secrets"
+        # Airflow paths - typically use dotenv_export format
+        - path: "kv/data/engineering/v1/airflow/data-engineering/cie-inference"
+          format: dotenv_export
+          key: dotenv
+          description: "CIE Inference Airflow environment variables"
+        
+        - path: "kv/data/engineering/v1/airflow/data-engineering/helios"
+          format: json
+          key: secrets
+          description: "Helios Airflow environment variables Json"
+        - path: "kv/data/engineering/v1/airflow/data-engineering/helios"
+          format: dotenv_plain
+          key: dotenv
+          description: "Helios Airflow environment variables"
+        
+        
+        - path: "kv/data/engineering/v1/airflow/data-engineering/model-service"
+          description: "Model Service Airflow environment variables"
+          format: json
+          key: secrets
+          aws_keys:
+            access_key: "AWS_ACCESS_KEY"
+            secret_key: "AWS_SECRET_KEY"
+        - path: "kv/data/engineering/v1/airflow/data-engineering/model-service"
+          description: "Model Service Airflow environment variables"
+          format: dotenv_plain
+          key: dotenv
+          aws_keys:
+            access_key: "AWS_ACCESS_KEY"
+            secret_key: "AWS_SECRET_KEY"
+
+        # Chat service - uses JSON format
+        - path: "kv/data/engineering/v1/c2fo-chat/data-engineering/chat-env"
+          format: json
+          key: secret
+          description: "Chat service configuration"
+        # EC2 services
+        - path: "kv/data/engineering/ec2/data-engineering/helios/secrets"
+          format: json
+          key: secrets
+          aws_keys:
+            access_key: "S3_ACCESS_KEY"
+            secret_key: "S3_SECRET_KEY"
+          description: "Helios EC2 secrets Json"
+
+
+        - path: "kv/data/engineering/ec2/data-engineering/helios/dotenv"
+          format: dotenv_plain
+          key: dotenv
+          aws_keys:
+            access_key: "S3_ACCESS_KEY"
+            secret_key: "S3_SECRET_KEY"
+          description: "Helios EC2 secrets"
+
+        - path: "kv/data/engineering/ec2/data-engineering/atlas-spark-apps/helios"
+          format: dotenv_plain
+          key: dotenv
+          description: "Atlas Spark Apps environment variables"
+          aws_keys:
+            access_key: "S3_ACCESS_KEY"
+            secret_key: "S3_SECRET_KEY"
+        
+    
     Pricing:
       paths:
-        - "kv/data/engineering/v1/dummy-shadow-pricing-service/data-engineering/pricing-env"
-        - "kv/data/engineering/v1/nmr-shadow-pricing-service/data-engineering/pricing-env"
-        - "kv/data/engineering/v1/pricing-service/data-engineering/pricing-env"
-        - "kv/data/engineering/v1/prod-pricing-service/data-engineering/pricing-env"
-        - "kv/data/engineering/v1/ps-shadow-pricing-service/data-engineering/pricing-env"
-        - "kv/data/engineering/v1/shadow-pricing-service/data-engineering/pricing-env"
+        # Shadow pricing services - mix of formats
+        - path: "kv/data/engineering/v1/dummy-shadow-pricing-service/data-engineering/pricing-env"
+          format: dotenv_export
+          key: dotenv
+          description: "Dummy shadow pricing environment variables"
+        - path: "kv/data/engineering/v1/nmr-shadow-pricing-service/data-engineering/pricing-env"
+          format: dotenv_export
+          key: dotenv
+          description: "NMR shadow pricing environment variables"
+        - path: "kv/data/engineering/v1/pricing-service/data-engineering/pricing-env"
+          format: dotenv_export
+          key: dotenv
+          description: "Main pricing service configuration"
+        - path: "kv/data/engineering/v1/prod-pricing-service/data-engineering/pricing-env"
+          format: dotenv_export
+          key: dotenv
+          description: "Production pricing service environment variables"
+        - path: "kv/data/engineering/v1/ps-shadow-pricing-service/data-engineering/pricing-env"
+          format: dotenv_export
+          key: dotenv
+          description: "PS shadow pricing environment variables"
+        - path: "kv/data/engineering/v1/shadow-pricing-service/data-engineering/pricing-env"
+          format: dotenv_export
+          key: dotenv
+          description: "Shadow pricing service configuration"
 
   testing:
     vault_url: "https://vault-us-west-2-testing.c2fo.com"
     Helios:
       paths:
-        - "kv/data/engineering/v1/airflow/data-engineering/cie-inference"
-        - "kv/data/engineering/v1/airflow/data-engineering/helios"
+        - path: "kv/data/engineering/v1/airflow/data-engineering/cie-inference"
+          format: dotenv_export
+          key: dotenv
+          description: "Testing CIE Inference environment variables"
+        - path: "kv/data/engineering/v1/airflow/data-engineering/helios"
+          format: dotenv_export
+          key: dotenv
+          description: "Testing Helios environment variables"
+    
     Pricing:
       paths:
-        - "kv/data/engineering/v1/pricing-service/data-engineering/pricing-env"
+        - path: "kv/data/engineering/v1/pricing-service/data-engineering/pricing-env"
+          format: dotenv_export
+          key: dotenv
+          description: "Testing pricing service environment variables"
+
   non_prod:
     vault_url: "https://vault-us-west-2-non-prod.c2fo.com"
     Helios:
       paths:
-        - "kv/data/engineering/v1/fss-c2fo-chat/data-engineering/chat-env"
+        - path: "kv/data/engineering/v1/fss-c2fo-chat/data-engineering/chat-env"
+          format: dotenv_export
+          key: dotenv
+          description: "Non-prod chat service configuration"
+    
     Pricing:
       paths:
-        - "kv/data/engineering/v1/fss-pricing-service/data-engineering/pricing-env"
+        - path: "kv/data/engineering/v1/fss-pricing-service/data-engineering/pricing-env"
+          format: dotenv_export
+          key: dotenv
+          description: "Non-prod pricing service environment variables"

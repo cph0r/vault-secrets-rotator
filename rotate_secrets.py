@@ -7,6 +7,7 @@ This script allows users to rotate secrets stored in HashiCorp Vault across mult
 
 import logging
 import sys
+from typing import List, Dict, Any
 from utils import (
     load_config,
     init_vault_client,
@@ -17,6 +18,11 @@ from utils import (
     confirm_changes,
 )
 import hvac
+
+
+def get_paths_from_config(config: Dict[str, Any], env: str, app: str) -> List[Dict[str, str]]:
+    """Get paths from config with their format information."""
+    return config["environments"][env][app]["paths"]
 
 
 def main():
@@ -65,7 +71,7 @@ def main():
     # Test paths
     mount_point = config["vault"]["mount_point"]
     first_app = available_apps[0]
-    paths = config["environments"][env_choice][first_app]["paths"]
+    paths = get_paths_from_config(config, env_choice, first_app)
 
     logger.info("🔍 Verifying access to paths...")
     path_results = check_paths(client, mount_point, paths)
@@ -83,7 +89,7 @@ def main():
 
     # Application selection
     app_choice = prompt_user("Select application", available_apps)
-    paths = config["environments"][env_choice][app_choice]["paths"]
+    paths = get_paths_from_config(config, env_choice, app_choice)
 
     # Choose secret type
     secret_type = prompt_user(
@@ -102,7 +108,7 @@ def main():
         logger.info("Example: for 'export LANGFUSE_HOST=...' enter 'LANGFUSE_HOST'")
         key_name = prompt_user("Environment variable name")
         new_value = prompt_user(f"New value for {key_name}", sensitive=True)
-        changes[f"Environment variable"] = f"export {key_name}={new_value}"
+        changes[f"Environment variable"] = f"{key_name}={new_value}"
 
     # Confirmation
     if not confirm_changes(changes):
@@ -112,19 +118,29 @@ def main():
     # Perform rotations
     logger.info("⚙️  Rotating secrets...")
     try:
-        for path in paths:
+        for path_config in paths:
+            path = path_config['path']
             if secret_type == "AWS secret keys":
                 rotate_secret_kv(
-                    client, mount_point, path,
-                    {
+                    client=client,
+                    mount_point=mount_point,
+                    path=path,
+                    key_or_dict={
                         "AWS_ACCESS_KEY_ID": access_key_id,
                         "AWS_SECRET_ACCESS_KEY": secret_access_key
-                    }
+                    },
+                    config=config,
+                    environment=env_choice
                 )
             else:
                 rotate_secret_kv(
-                    client, mount_point, path,
-                    key_name, new_value
+                    client=client,
+                    mount_point=mount_point,
+                    path=path,
+                    key_or_dict=key_name,
+                    value=new_value,
+                    config=config,
+                    environment=env_choice
                 )
             logger.info(f"🔄 Updated {path}")
     except ValueError as e:
