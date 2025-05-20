@@ -39,4 +39,7 @@ htmlcov/
 .pytest_cache/
 
 # Logs
-*.log 
+*.log
+logs/
+
+# ... rest of the file remains unchanged ... 

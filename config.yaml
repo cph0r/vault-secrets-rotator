@@ -12,10 +12,10 @@ environments:
     Helios:
       paths:
         # Airflow paths - typically use dotenv_export format
-        - path: "kv/data/engineering/v1/airflow/data-engineering/cie-inference"
-          format: dotenv_export
-          key: dotenv
-          description: "CIE Inference Airflow environment variables"
+#        - path: "kv/data/engineering/v1/airflow/data-engineering/cie-inference"
+#          format: dotenv_export
+#          key: dotenv
+#          description: "CIE Inference Airflow environment variables"
         
         - path: "kv/data/engineering/v1/airflow/data-engineering/helios"
           format: json
@@ -57,7 +57,7 @@ environments:
           description: "Helios EC2 secrets Json"
 
 
-        - path: "kv/data/engineering/ec2/data-engineering/helios/dotenv"
+        - path: "kv/data/engineering/ec2/data-engineering/helios/"
           format: dotenv_plain
           key: dotenv
           aws_keys:
@@ -106,10 +106,10 @@ environments:
     vault_url: "https://vault-us-west-2-testing.c2fo.com"
     Helios:
       paths:
-        - path: "kv/data/engineering/v1/airflow/data-engineering/cie-inference"
-          format: dotenv_export
-          key: dotenv
-          description: "Testing CIE Inference environment variables"
+#        - path: "kv/data/engineering/v1/airflow/data-engineering/cie-inference"
+#          format: dotenv_export
+#          key: dotenv
+#          description: "Testing CIE Inference environment variables"
         - path: "kv/data/engineering/v1/airflow/data-engineering/helios"
           format: dotenv_export
           key: dotenv

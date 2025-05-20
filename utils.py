@@ -3,6 +3,7 @@ import hvac
 from getpass import getpass
 import logging
 from typing import Dict, Any, Optional, Tuple, Union, NamedTuple
+from pathlib import Path
 
 from secret_formats import read_secret, format_secret
 
@@ -15,9 +16,37 @@ class AwsKeyNames(NamedTuple):
     secret_key: str
 
 
-def load_config(config_path: str) -> dict:
+def clean_vault_path(path: str) -> str:
+    """
+    Clean and normalize a Vault path.
+    
+    Args:
+        path: Raw path string
+        
+    Returns:
+        Cleaned path string with 'data/' prefix removed if present
+    """
+    # Convert to Path object for normalization
+    path_obj = Path(path)
+    # Convert back to string and ensure forward slashes
+    clean_path = str(path_obj).replace('\\', '/')
+    # Remove leading/trailing slashes
+    clean_path = clean_path.strip('/')
+    # Remove 'data/' prefix if present
+    parts = clean_path.split('/')
+    if 'data' in parts:
+        data_index = parts.index('data')
+        return '/'.join(parts[data_index + 1:])
+    return clean_path
+
+
+def load_config(config_path: Union[str, Path]) -> dict:
     """Load YAML configuration file."""
-    with open(config_path, 'r') as f:
+    config_path = Path(config_path)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    
+    with config_path.open('r') as f:
         return yaml.safe_load(f)
 
 
@@ -49,13 +78,7 @@ def check_paths(client: hvac.Client, mount_point: str, paths: list) -> dict:
     for path_config in paths:
         path = path_config['path'] if isinstance(path_config, dict) else path_config
         try:
-            path_parts = path.split('/')
-            if 'data' in path_parts:
-                data_index = path_parts.index('data')
-                actual_path = '/'.join(path_parts[data_index + 1:])
-            else:
-                actual_path = path
-            
+            actual_path = clean_vault_path(path)
             client.secrets.kv.v2.read_secret_version(
                 path=actual_path,
                 mount_point=mount_point
@@ -100,7 +123,7 @@ def get_path_format(config: dict, environment: str, path: str) -> Tuple[str, str
         Tuple of (format_type, key, aws_key_names)
     """
     # Remove mount point and 'data' from path if present
-    clean_path = path.replace(f"{config['vault']['mount_point']}/data/", "")
+    clean_path = path.replace("kv/data/", "")
     
     # Find matching path in config
     env_config = config['environments'][environment]
@@ -189,12 +212,7 @@ def rotate_secret_kv(
     """
     try:
         # Clean up path
-        path_parts = path.split('/')
-        if 'data' in path_parts:
-            data_index = path_parts.index('data')
-            actual_path = '/'.join(path_parts[data_index + 1:])
-        else:
-            actual_path = path
+        actual_path = clean_vault_path(path)
             
         # Read current secret or initialize empty if not exists
         try:

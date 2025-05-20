@@ -15,6 +15,10 @@ A CLI tool for rotating secrets stored in HashiCorp Vault across multiple enviro
 - Path validation and detailed error reporting
 - Interactive CLI with confirmation prompts
 - Smart secret key preservation across rotations
+- Dry-run mode for previewing changes 🆕
+- Detailed logging with file output 🆕
+- Robust path handling with normalization 🆕
+- Graceful error handling with specific error messages 🆕
 
 ## Prerequisites 📋
 
@@ -96,7 +100,11 @@ vault:
 
 Run the script:
 ```bash
+# Normal mode - apply changes
 python rotate_secrets.py
+
+# Dry-run mode - preview changes without applying
+python rotate_secrets.py --dry-run
 ```
 
 The script will:
@@ -104,7 +112,7 @@ The script will:
 2. Request GitHub token for authentication
 3. Verify access to configured paths
 4. Allow selection of application and secret type
-5. Rotate the selected secrets
+5. Rotate the selected secrets (or preview in dry-run mode)
 6. Show confirmation with:
    - Full access key for verification
    - Last 4 characters of secret key
@@ -130,6 +138,8 @@ The script provides detailed error messages for:
 - Invalid paths
 - Secret rotation failures
 - Format validation errors
+- Configuration file issues
+- Path normalization problems
 
 ## Security Notes 🛡️
 
@@ -137,4 +147,15 @@ The script provides detailed error messages for:
 - Confirmation required before making changes
 - Token and secret values are masked in logs
 - Only last 4 characters of secret keys shown for verification
-- Uses Vault's KV v2 engine for versioning 
+- Uses Vault's KV v2 engine for versioning
+- Detailed logging with sensitive data masking
+- Logs directory is git-ignored
+
+## Logging 📝
+
+The script maintains detailed logs in the `logs` directory:
+- Timestamp-based log files
+- Console output shows user-friendly messages
+- Log files contain detailed debugging information
+- Sensitive data is automatically masked
+- Each rotation session gets its own log file 
