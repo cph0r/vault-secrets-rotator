@@ -101,6 +101,10 @@ environments:
           format: dotenv_export
           key: dotenv
           description: "Shadow pricing service configuration"
+        - path: "kv/data/engineering/v1/prod-offer-constructs/data-engineering/oc-env"
+          format: dotenv_export
+          key: dotenv
+          description: "prod offer constructs environment variables"
 
   testing:
     vault_url: "https://vault-us-west-2-testing.c2fo.com"
@@ -137,3 +141,7 @@ environments:
           format: dotenv_export
           key: dotenv
           description: "Non-prod pricing service environment variables"
+        - path: "kv/data/engineering/v1/fss-offer-constructs/data-engineering/oc-env"
+          format: dotenv_export
+          key: dotenv
+          description: "Non-prod offer constructs environment variables"
